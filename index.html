@@ -1,0 +1,16 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Local Gemma + Kokoro</title><link rel="stylesheet" href="style.css"></head><body>
+<h1>Local audio/video → text → speech</h1>
+<p id="status">Idle.</p>
+<button id="load">Load models (multi-GB first download)</button>
+<div>Gemma <progress id="pg" max="100" value="0"></progress> Kokoro <progress id="pk" max="100" value="0"></progress></div>
+<video id="cam" muted playsinline></video>
+<textarea id="prompt" rows="2">Describe what you see and hear.</textarea>
+<div>
+<button id="mic" disabled>Start mic</button><button id="camBtn" disabled>Start camera</button>
+<label><button id="up" disabled>Upload file</button></label><button id="stop">Stop</button>
+<select id="voice"></select><input id="file" type="file" accept="audio/*,video/*" hidden>
+</div>
+<h3>Response</h3><div id="out"></div>
+<script type="module" src="app.js"></script></body></html>
