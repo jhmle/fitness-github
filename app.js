@@ -50,9 +50,19 @@ kokoro.onmessage = ({ data: d }) => {
 // ---- Capture helpers
 async function decodeAudio(blob) {
   const ctx = new AudioContext({ sampleRate: 16000 }); // Chrome resamples on decode
-  const ab = await ctx.decodeAudioData(await blob.arrayBuffer()); ctx.close();
-  const ch = ab.getChannelData(0);
-  return ch.slice(0, 16000 * 30); // cap ~30 s (chunk longer audio yourself if needed)
+  const ab = await ctx.decodeAudioData(await blob.arrayBuffer()); await ctx.close();
+  // mix all channels down to mono (channel 0 alone can be silent on some devices/files)
+  const n = Math.min(ab.length, 16000 * 30); // cap ~30 s
+  const out = new Float32Array(n);
+  for (let c = 0; c < ab.numberOfChannels; c++) {
+    const ch = ab.getChannelData(c);
+    for (let i = 0; i < n; i++) out[i] += ch[i] / ab.numberOfChannels;
+  }
+  let peak = 0; for (let i = 0; i < n; i++) peak = Math.max(peak, Math.abs(out[i]));
+  console.log("decoded audio", { seconds: (n / 16000).toFixed(1), peak: peak.toFixed(4), channels: ab.numberOfChannels, rate: ab.sampleRate });
+  if (peak < 0.005) return { samples: null, peak, seconds: n / 16000 }; // effectively silence
+  if (peak < 0.3) { const g = 0.7 / peak; for (let i = 0; i < n; i++) out[i] *= g; } // normalise quiet mics
+  return { samples: out, peak, seconds: n / 16000 };
 }
 function grab(video) {
   const c = document.createElement("canvas"), k = 448 / Math.max(video.videoWidth, video.videoHeight);
@@ -68,19 +78,26 @@ async function run(audio, frames) {
   gemma.postMessage({ type: "run", audio, frames, text: $("prompt").value });
 }
 async function start(useVideo, useAudio) {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: useAudio, video: useVideo });
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: useAudio && { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: useVideo });
   rec = { stream, chunks: [], frames: [] };
   if (useVideo) { $("cam").srcObject = stream; await $("cam").play();
     rec.timer = setInterval(async () => rec.frames.length < 6 && rec.frames.push(await grab($("cam"))), 1000); }
   rec.mr = new MediaRecorder(new MediaStream(stream.getAudioTracks()));
   rec.mr.ondataavailable = e => rec.chunks.push(e.data); rec.mr.start();
-  status("Recording… press Stop."); setTimeout(() => rec && stopRec(), 30000);
+  status("Recording… press Stop."); const me = rec; setTimeout(() => rec === me && stopRec(), 30000);
 }
 async function stopRec() {
   const r = rec; rec = null; clearInterval(r.timer);
   await new Promise(res => { r.mr.onstop = res; r.mr.stop(); });
   r.stream.getTracks().forEach(t => t.stop()); $("cam").srcObject = null;
-  const audio = r.chunks.length ? await decodeAudio(new Blob(r.chunks)) : null;
+  let audio = null;
+  if (r.chunks.length) {
+    try {
+      const d = await decodeAudio(new Blob(r.chunks, { type: r.mr.mimeType }));
+      if (!d.samples) { status(`Mic recorded only silence (peak ${d.peak.toFixed(4)}). Check your input device / browser mic permission.`); r.frames = []; return; }
+      audio = d.samples; status(`Captured ${d.seconds.toFixed(1)} s of audio.`);
+    } catch (e) { status("Could not decode recording: " + e.message); r.frames = []; return; }
+  }
   await run(audio, r.frames); r.frames = []; // release references
 }
 $("mic").onclick = () => start(false, true);
@@ -90,7 +107,7 @@ $("up").onclick = () => $("file").click();
 $("file").onchange = async (e) => {
   const f = e.target.files[0]; if (!f) return; status("Reading file…");
   let audio = null, frames = [];
-  try { audio = await decodeAudio(f); } catch { status("Could not decode audio track."); }
+  try { audio = (await decodeAudio(f)).samples; } catch { status("Could not decode audio track."); }
   if (f.type.startsWith("video/")) {
     const v = $("cam"); v.src = URL.createObjectURL(f); await v.play().catch(()=>{}); v.pause();
     const n = Math.min(6, Math.max(1, Math.floor(v.duration)));
