@@ -1,8 +1,13 @@
 import { TRANSFORMERS_URL, GEMMA_ID } from "./config.js";
 // API below follows the official model card for onnx-community/gemma-4-E2B-it-ONNX
-// (Gemma4ForConditionalGeneration, q4f16, webgpu, processor(prompt, image, audio)).
+// (Gemma4ForConditionalGeneration, webgpu, processor(prompt, image, audio)).
 let T, processor, model;
 const post = (m) => self.postMessage(m);
+
+const SYSTEM_PROMPT =
+  "You are a helpful assistant. You hear the user through a microphone and reply with short, friendly, " +
+  "conversational text. Every user turn may include a recording of what you just heard and an image from " +
+  "the camera; treat both as part of the user's input.";
 
 self.onmessage = async ({ data }) => {
   try {
@@ -10,23 +15,37 @@ self.onmessage = async ({ data }) => {
       T = await import(TRANSFORMERS_URL);
       const progress_callback = (p) => p.status === "progress_total" && post({ type: "progress", pct: p.progress });
       processor = await T.AutoProcessor.from_pretrained(GEMMA_ID);
+      // FIX: the audio encoder must NOT be loaded at q4f16 (it produces unusable embeddings, so the
+      // model "can't hear"). Google's reference demo loads each component separately like this.
+      const q = data.dtype || "q4f16"; // applies to embeddings + decoder only
       model = await T.Gemma4ForConditionalGeneration.from_pretrained(GEMMA_ID, {
-        dtype: data.dtype || "q4f16", device: "webgpu", progress_callback,
+        dtype: {
+          audio_encoder: "q4",
+          vision_encoder: "q4",
+          embed_tokens: q,
+          decoder_model_merged: q,
+        },
+        device: "webgpu",
+        progress_callback,
       });
       post({ type: "ready" });
     } else if (data.type === "run") {
       const { frames, text } = data;
       const audio = data.audio ? new Float32Array(data.audio) : null; // audio: Float32Array@16k | null, frames: Blob[]
-      // UNVERIFIED: the model card shows ONE image only. We send the latest frame; multi-image is untested.
+      // We send the latest frame only (the model card shows a single image).
       const image = frames.length ? await T.RawImage.fromBlob(frames[frames.length - 1]) : null;
       const content = [
         ...(image ? [{ type: "image" }] : []),
         ...(audio ? [{ type: "audio" }] : []),
         { type: "text", text: text || (audio ? "Listen to the audio and respond to what the speaker says." : "") },
       ];
-      const prompt = processor.apply_chat_template([{ role: "user", content }], {
-        enable_thinking: false, add_generation_prompt: true,
-      });
+      const prompt = processor.apply_chat_template(
+        [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content },
+        ],
+        { enable_thinking: false, add_generation_prompt: true },
+      );
       const inputs = await processor(prompt, image, audio, { add_special_tokens: false });
       console.log("processor outputs:", Object.keys(inputs), "prompt:", prompt);
       if (audio) {
