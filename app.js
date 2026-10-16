@@ -10,9 +10,9 @@ let ready = 0, busy = false, rec = null; // rec = {stream, mr, chunks, frames, t
 
 $("load").onclick = () => {
   $("load").disabled = true; status("Downloading models…");
-  gemma.postMessage({ type: "load" }); kokoro.postMessage({ type: "load" });
+  gemma.postMessage({ type: "load", dtype: new URLSearchParams(location.search).get("dtype") || "q4f16" }); kokoro.postMessage({ type: "load" });
 };
-const onReady = () => { if (++ready === 2) { status("Ready."); ["mic","camBtn","up"].forEach(i => $(i).disabled = false); } };
+const onReady = () => { if (++ready === 2) { status("Ready."); ["mic","camBtn","up","txt"].forEach(i => $(i).disabled = false); } };
 const fail = (e) => status("Error: " + e.message);
 
 // ---- Audio playback queue (24 kHz chunks, scheduled back to back)
@@ -61,6 +61,8 @@ function grab(video) {
   return new Promise(r => c.toBlob(r, "image/jpeg", 0.8));
 }
 async function run(audio, frames) {
+  const m = $("mode").value; if (m === "audio") frames = []; if (m === "image") audio = null;
+  console.log("sending", { audioSamples: audio?.length ?? 0, frames: frames.length, mode: m });
   if (busy) return; busy = true; $("out").textContent = ""; buf = ""; nextT = 0;
   status("Thinking…");
   gemma.postMessage({ type: "run", audio, frames, text: $("prompt").value });
@@ -97,3 +99,5 @@ $("file").onchange = async (e) => {
   }
   await run(audio, frames); e.target.value = "";
 };
+
+$("txt").onclick = () => run(null, []);

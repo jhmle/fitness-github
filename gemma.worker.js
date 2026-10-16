@@ -11,7 +11,7 @@ self.onmessage = async ({ data }) => {
       const progress_callback = (p) => p.status === "progress_total" && post({ type: "progress", pct: p.progress });
       processor = await T.AutoProcessor.from_pretrained(GEMMA_ID);
       model = await T.Gemma4ForConditionalGeneration.from_pretrained(GEMMA_ID, {
-        dtype: "q4f16", device: "webgpu", progress_callback,
+        dtype: data.dtype || "q4f16", device: "webgpu", progress_callback,
       });
       post({ type: "ready" });
     } else if (data.type === "run") {
