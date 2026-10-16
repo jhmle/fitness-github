@@ -12,7 +12,7 @@ $("load").onclick = () => {
   $("load").disabled = true; status("Downloading models…");
   gemma.postMessage({ type: "load", dtype: new URLSearchParams(location.search).get("dtype") || "q4f16" }); kokoro.postMessage({ type: "load" });
 };
-const onReady = () => { if (++ready === 2) { status("Ready."); ["mic","camBtn","up","txt"].forEach(i => $(i).disabled = false); } };
+const onReady = () => { if (++ready === 2) { status("Ready."); ["mic","camBtn","up","txt","sample"].forEach(i => $(i).disabled = false); } };
 const fail = (e) => status("Error: " + e.message);
 
 // ---- Audio playback queue (24 kHz chunks, scheduled back to back)
@@ -36,6 +36,7 @@ const speak = (text) => text.trim() && kokoro.postMessage({ type: "speak", text,
 gemma.onmessage = ({ data: d }) => {
   if (d.type === "progress") $("pg").value = d.pct;
   else if (d.type === "ready") onReady();
+  else if (d.type === "debug") { $("dbg").textContent = d.text; console.log(d.text); }
   else if (d.type === "token") feed(d.text, false);
   else if (d.type === "done") { feed("", true); busy = false; status("Done."); }
   else if (d.type === "error") { busy = false; fail(d); }
@@ -73,21 +74,50 @@ function grab(video) {
 async function run(audio, frames) {
   const m = $("mode").value; if (m === "audio") frames = []; if (m === "image") audio = null;
   console.log("sending", { audioSamples: audio?.length ?? 0, frames: frames.length, mode: m });
-  if (busy) return; busy = true; $("out").textContent = ""; buf = ""; nextT = 0;
+  if (busy) return; busy = true; $("out").textContent = ""; $("dbg").textContent = ""; buf = ""; nextT = 0;
   status("Thinking…");
   gemma.postMessage({ type: "run", audio, frames, text: $("prompt").value });
+}
+// ---- Live mic waveform (so you can see your voice is being picked up)
+function startViz(stream) {
+  const cv = $("wave"), g = cv.getContext("2d");
+  const vctx = new AudioContext(), src = vctx.createMediaStreamSource(stream), an = vctx.createAnalyser();
+  an.fftSize = 1024; src.connect(an); // analyser only: not connected to speakers, so no feedback
+  const data = new Uint8Array(an.fftSize), t0 = performance.now();
+  let raf, peak = 0;
+  cv.style.display = "block";
+  const draw = () => {
+    raf = requestAnimationFrame(draw);
+    const w = cv.width = cv.clientWidth * devicePixelRatio, h = cv.height = 80 * devicePixelRatio;
+    an.getByteTimeDomainData(data);
+    let lvl = 0; for (const v of data) lvl = Math.max(lvl, Math.abs(v - 128) / 128);
+    peak = Math.max(peak, lvl);
+    g.clearRect(0, 0, w, h);
+    g.lineWidth = 2 * devicePixelRatio; g.strokeStyle = lvl > 0.02 ? "#6f6" : "#666"; g.beginPath();
+    for (let i = 0; i < data.length; i++) {
+      const x = (i / (data.length - 1)) * w, y = (data[i] / 255) * h;
+      i ? g.lineTo(x, y) : g.moveTo(x, y);
+    }
+    g.stroke();
+    g.fillStyle = "#6f6"; g.fillRect(0, h - 4 * devicePixelRatio, w * Math.min(1, lvl * 2), 4 * devicePixelRatio); // level bar
+    if (performance.now() - t0 > 2000 && peak < 0.02) status("Recording… but no sound detected. Check your mic / input device.");
+    else status("Recording… " + ((performance.now() - t0) / 1000).toFixed(0) + "s — press Stop.");
+  };
+  draw();
+  return () => { cancelAnimationFrame(raf); vctx.close(); g.clearRect(0, 0, cv.width, cv.height); cv.style.display = "none"; };
 }
 async function start(useVideo, useAudio) {
   const stream = await navigator.mediaDevices.getUserMedia({ audio: useAudio && { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: useVideo });
   rec = { stream, chunks: [], frames: [] };
+  if (useAudio) rec.stopViz = startViz(stream);
   if (useVideo) { $("cam").srcObject = stream; await $("cam").play();
     rec.timer = setInterval(async () => rec.frames.length < 6 && rec.frames.push(await grab($("cam"))), 1000); }
   rec.mr = new MediaRecorder(new MediaStream(stream.getAudioTracks()));
   rec.mr.ondataavailable = e => rec.chunks.push(e.data); rec.mr.start();
-  status("Recording… press Stop."); const me = rec; setTimeout(() => rec === me && stopRec(), 30000);
+  const me = rec; setTimeout(() => rec === me && stopRec(), 30000);
 }
 async function stopRec() {
-  const r = rec; rec = null; clearInterval(r.timer);
+  const r = rec; rec = null; clearInterval(r.timer); r.stopViz?.();
   await new Promise(res => { r.mr.onstop = res; r.mr.stop(); });
   r.stream.getTracks().forEach(t => t.stop()); $("cam").srcObject = null;
   let audio = null;
@@ -118,3 +148,12 @@ $("file").onchange = async (e) => {
 };
 
 $("txt").onclick = () => run(null, []);
+// Known-good clip: if this works but your mic does not, the problem is the recording, not the model.
+$("sample").onclick = async () => {
+  try {
+    status("Fetching sample audio…");
+    const r = await fetch("https://huggingface.co/datasets/Xenova/transformers.js-docs/resolve/main/jfk.wav");
+    const d = await decodeAudio(await r.blob());
+    await run(d.samples, []);
+  } catch (e) { status("Sample failed: " + e.message); }
+};

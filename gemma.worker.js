@@ -29,8 +29,19 @@ self.onmessage = async ({ data }) => {
       });
       const inputs = await processor(prompt, image, audio, { add_special_tokens: false });
       console.log("processor outputs:", Object.keys(inputs), "prompt:", prompt);
-      if (audio && !Object.keys(inputs).some(k => /audio|feature/i.test(k)))
-        throw new Error("Audio was sent but the processor produced no audio features (keys: " + Object.keys(inputs).join(", ") + ")");
+      if (audio) {
+        // Verify the model will really "see" the audio: placeholder tokens + sane features.
+        const aid = processor.tokenizer.convert_tokens_to_ids("<|audio|>");
+        const nTok = Array.from(inputs.input_ids.data, Number).filter((x) => x === aid).length;
+        const fk = Object.keys(inputs).find((k) => /feature/i.test(k) && !/mask/i.test(k));
+        if (!fk) throw new Error("Processor produced no audio features. Keys: " + Object.keys(inputs).join(", "));
+        let bad = 0, mx = 0;
+        for (const v of inputs[fk].data) { const n = Number(v); if (!Number.isFinite(n)) bad++; else mx = Math.max(mx, Math.abs(n)); }
+        const info = `audio: ${(audio.length / 16000).toFixed(1)}s | placeholder tokens in prompt: ${nTok} | ${fk} dims [${inputs[fk].dims}] | NaN/Inf: ${bad} | max|x|: ${mx.toFixed(2)}`;
+        console.log(info); post({ type: "debug", text: info });
+        if (nTok === 0) throw new Error("The prompt contains no audio tokens, so the model cannot hear anything. (" + info + ")");
+        if (bad) throw new Error("Audio features contain NaN/Inf. (" + info + ")");
+      }
       const streamer = new T.TextStreamer(processor.tokenizer, {
         skip_prompt: true, skip_special_tokens: true,
         callback_function: (t) => post({ type: "token", text: t }),

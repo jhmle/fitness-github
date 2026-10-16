@@ -5,13 +5,15 @@
 <p id="status">Idle.</p>
 <button id="load">Load models (multi-GB first download)</button>
 <div>Gemma <progress id="pg" max="100" value="0"></progress> Kokoro <progress id="pk" max="100" value="0"></progress></div>
+<canvas id="wave" style="display:none;width:100%;height:80px;background:#000;border-radius:8px"></canvas>
 <video id="cam" muted playsinline></video>
 <textarea id="prompt" rows="2">Listen to the audio and respond to what the speaker says.</textarea>
-<div>Send: <select id="mode"><option value="all">audio + image</option><option value="audio">audio only</option><option value="image">image only</option></select> <button id="txt" disabled>Send text only</button></div>
+<div>Send: <select id="mode"><option value="all">audio + image</option><option value="audio">audio only</option><option value="image">image only</option></select> <button id="txt" disabled>Send text only</button> <button id="sample" disabled>Test sample audio</button></div>
 <div>
 <button id="mic" disabled>Start mic</button><button id="camBtn" disabled>Start camera</button>
 <label><button id="up" disabled>Upload file</button></label><button id="stop">Stop</button>
 <select id="voice"></select><input id="file" type="file" accept="audio/*,video/*" hidden>
 </div>
+<pre id="dbg" style="color:#8a8;white-space:pre-wrap;font-size:12px"></pre>
 <h3>Response</h3><div id="out"></div>
 <script type="module" src="app.js"></script></body></html>
