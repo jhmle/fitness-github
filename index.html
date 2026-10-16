@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Voice Studio · Gemma 4 + Kokoro</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -11,104 +14,64 @@
 
   <header class="topbar">
     <div class="brand">
-      <div class="logo" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4"/></svg>
-      </div>
-      <div>
-        <h1>Voice Studio</h1>
-        <p>Talk to Gemma 4. It hears you, sees you, and answers out loud, all on your device.</p>
-      </div>
+      <h1>Voice Studio</h1>
+      <p>Talk naturally. Gemma 4 listens, looks and answers out loud, all on your device.</p>
     </div>
-    <div id="status" class="pill pill-idle" role="status" aria-live="polite">Idle</div>
+    <div id="status" class="pill pill-idle" role="status" aria-live="polite">Models not loaded</div>
   </header>
 
   <section class="card" id="setup">
     <div class="card-head">
-      <h2>Models</h2>
-      <span class="muted small hint">Cached after the first download</span>
-      <span class="doneMsg">✓ Loaded and ready</span>
+      <h2>Get started</h2>
+      <span class="muted small hint">Downloads once, then cached</span>
+      <span class="doneMsg">✓ Models loaded</span>
     </div>
     <div class="load-grid">
-      <label class="meter"><span>Gemma 4 · listens &amp; thinks</span><progress id="pg" max="100" value="0"></progress></label>
-      <label class="meter"><span>Kokoro · speaks</span><progress id="pk" max="100" value="0"></progress></label>
+      <label class="meter"><span>Gemma 4 (listens and thinks)</span><progress id="pg" max="100" value="0"></progress></label>
+      <label class="meter"><span>Kokoro (speaks)</span><progress id="pk" max="100" value="0"></progress></label>
       <button id="load" class="btn btn-primary">Load models</button>
     </div>
-    <p class="muted small hint">The first load downloads several GB, so it can take a few minutes.</p>
+    <p class="muted small hint">The first load downloads several GB and can take a few minutes.</p>
   </section>
 
-  <main class="grid">
-
-    <section class="card">
-      <div class="card-head">
-        <h2>Input</h2>
-        <label class="switch"><input type="checkbox" id="useCam"><span class="slider"></span><span>Use camera</span></label>
-      </div>
-
-      <div class="viewport" id="viewport">
-        <video id="cam" muted playsinline></video>
-        <div class="placeholder" id="camPlaceholder">
-          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
-          <span>Camera preview appears while recording</span>
-        </div>
-      </div>
-
-      <canvas id="wave" class="wave"></canvas>
-
-      <button id="mic" class="btn btn-record" disabled>
-        <span class="dot"></span><span id="micLabel">Start talking</span>
-      </button>
-
-      <div class="row">
-        <button id="up" class="btn" disabled>Upload audio / video</button>
-        <button id="sample" class="btn" disabled>Test sample audio</button>
-        <button id="stopSpeak" class="btn btn-ghost">Stop speaking</button>
-        <input id="file" type="file" accept="audio/*,video/*" hidden>
-      </div>
-
-      <label class="field">
-        <span>Add a typed message or instruction <em>(optional)</em></span>
-        <textarea id="prompt" rows="2" placeholder="Leave empty to just talk. Or type something and press “Send text”."></textarea>
-      </label>
-      <button id="txt" class="btn" disabled>Send text</button>
-
-      <details class="settings">
-        <summary>Settings</summary>
-        <div class="settings-grid">
-          <label class="field"><span>Gemma should</span>
-            <select id="task">
-              <option value="chat">Reply to me (conversation)</option>
-              <option value="transcribe">Only transcribe what it hears</option>
-            </select>
-          </label>
-          <label class="field"><span>Send</span>
-            <select id="mode">
-              <option value="all">Audio + image</option>
-              <option value="audio">Audio only</option>
-              <option value="image">Image only</option>
-            </select>
-          </label>
-          <label class="field"><span>Voice</span><select id="voice"></select></label>
-          <label class="switch"><input type="checkbox" id="speakOn" checked><span class="slider"></span><span>Speak replies aloud</span></label>
-        </div>
-      </details>
-    </section>
-
-    <section class="card">
-      <div class="card-head"><h2>Response</h2></div>
+  <section class="stage" id="stage" data-state="off" aria-label="Conversation">
+    <video id="cam" muted playsinline></video>
+    <div class="tint"></div>
+    <div class="center">
+      <div class="turn" id="turn"><span class="turn-dot"></span><span id="turnText">Not started</span></div>
+      <div class="orb" id="orb" aria-hidden="true"><i></i><i></i><i></i><b></b></div>
+      <h2 id="title">Ready when you are</h2>
+      <p id="hint">Load the models, then start a conversation.</p>
       <div id="out" class="out" aria-live="polite"></div>
+    </div>
+  </section>
 
-      <div id="heardWrap" class="heard" hidden>
-        <div class="small muted">What the model heard (your last recording)</div>
-        <audio id="heard" controls></audio>
-      </div>
+  <div class="controls">
+    <button id="mic" class="btn btn-go" disabled><span class="ico"></span><span id="micLabel">Start conversation</span></button>
+    <button id="skip" class="btn" disabled>Skip reply</button>
+  </div>
 
-      <details class="settings">
-        <summary>Diagnostics</summary>
-        <pre id="dbg"></pre>
-      </details>
-    </section>
+  <div class="options">
+    <label class="switch"><input type="checkbox" id="useCam"><span class="slider"></span><span>Camera</span></label>
+    <label class="switch"><input type="checkbox" id="speakOn" checked><span class="slider"></span><span>Speak replies</span></label>
+    <label class="inline"><span>Voice</span><select id="voice"></select></label>
+  </div>
 
-  </main>
+  <details class="card tools">
+    <summary>More ways to send input</summary>
+    <p class="muted small">Available when no conversation is running.</p>
+    <label class="field"><span>Type a message</span>
+      <textarea id="prompt" rows="2" placeholder="Type something for Gemma to answer"></textarea>
+    </label>
+    <div class="row">
+      <button id="txt" class="btn" disabled>Send message</button>
+      <button id="up" class="btn" disabled>Upload audio or video</button>
+      <button id="sample" class="btn" disabled>Play a test clip</button>
+      <input id="file" type="file" accept="audio/*,video/*" hidden>
+    </div>
+    <div class="small muted diag-label">Diagnostics</div>
+    <pre id="dbg"></pre>
+  </details>
 </div>
 <script type="module" src="app.js"></script>
 </body>
